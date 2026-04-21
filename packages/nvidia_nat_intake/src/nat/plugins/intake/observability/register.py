@@ -45,9 +45,11 @@ class IntakeTelemetryExporter(BatchConfigMixin, TelemetryExporterBaseConfig, nam
         default="unknown-model",
         description="Fallback model name when the span doesn't carry one.")
     event_types: list[str] = Field(
-        default_factory=lambda: [IntermediateStepType.LLM_END.value],
-        description="Span ``nat.event_type`` values to publish. Add 'WORKFLOW_END' for "
-        "agent types that don't emit LLM_END events.")
+        default_factory=lambda: [IntermediateStepType.LLM_START.value],
+        description="Span ``nat.event_type`` values to publish. NAT stamps the span at START "
+        "and keeps the value to export, so the default matches LLM_START (the span still "
+        "carries both input and output by then). Widen to include 'WORKFLOW_START' for "
+        "agent types that don't go through an LLM span.")
     api_key: OptionalSecretStr = Field(
         default=None,
         description="Bearer token for the Intake API. When unset, requests go out unauthenticated "

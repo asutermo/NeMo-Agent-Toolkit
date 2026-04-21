@@ -14,10 +14,13 @@
 # limitations under the License.
 """Span → ``EntryInput`` and ``EntryInput`` → ``dict`` processors.
 
-The Intake producer contract is one entry per LLM interaction. Spans for tool
-or workflow lifecycle events are dropped by default (they pollute training
-datasets with non-LLM rows). Workflow events can be enabled via the exporter
-config when an agent type doesn't emit ``LLM_END`` (e.g. early ``react_agent``).
+The Intake producer contract is one entry per LLM interaction. NAT's
+``SpanExporter`` stamps ``nat.event_type`` on a span at the START event and
+keeps that value through to export (each exported span already carries both
+input and output — END event metadata is merged before the pipeline sees it).
+We therefore filter on ``LLM_START`` by default, matching the canonical
+``nvidia_nat_data_flywheel`` exporter. Widen ``event_types`` to include
+``WORKFLOW_START`` for agent types that don't go through an LLM span.
 """
 
 import json
@@ -77,7 +80,7 @@ def _coerce_choices(raw: Any) -> list[FlexibleChoice]:
     return [FlexibleChoice(index=0, message=FlexibleMessage(role="assistant", content=content), finish_reason="stop")]
 
 
-_DEFAULT_EVENT_TYPES: frozenset[str] = frozenset({IntermediateStepType.LLM_END.value})
+_DEFAULT_EVENT_TYPES: frozenset[str] = frozenset({IntermediateStepType.LLM_START.value})
 
 
 class SpanToIntakeEntryProcessor(Processor[Span, EntryInput | None]):
@@ -102,13 +105,26 @@ class SpanToIntakeEntryProcessor(Processor[Span, EntryInput | None]):
         self._default_model = default_model
         self._project = project
         self._event_types = event_types
+        self._seen = 0
+        self._matched = 0
 
     @override
     async def process(self, item: Span) -> EntryInput | None:
+        self._seen += 1
         attrs = item.attributes
         event_type = attrs.get("nat.event_type")
         if event_type not in self._event_types:
+            # Debug level — noisy by design; INFO summary is emitted elsewhere.
+            logger.debug(
+                "intake: dropping span (event_type=%s not in %s, seen=%d matched=%d)",
+                event_type, sorted(self._event_types), self._seen, self._matched,
+            )
             return None
+        self._matched += 1
+        logger.info(
+            "intake: matched span event_type=%s name=%s (seen=%d matched=%d)",
+            event_type, item.name, self._seen, self._matched,
+        )
 
         # Prefer the *_obj attribute when present — it's the structured form.
         raw_input = attrs.get("input.value_obj") or attrs.get("input.value")

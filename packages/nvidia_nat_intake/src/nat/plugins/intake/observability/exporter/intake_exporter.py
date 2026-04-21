@@ -23,6 +23,7 @@ import logging
 import httpx
 
 from nat.builder.context import ContextState
+from nat.data_models.intermediate_step import IntermediateStep
 from nat.data_models.span import Span
 from nat.observability.exporter.span_exporter import SpanExporter
 from nat.observability.processor.batching_processor import BatchingProcessor
@@ -70,6 +71,7 @@ class IntakeExporter(SpanExporter[Span, dict]):
         self._workspace = workspace
         self._client = client
         self._url = f"{self._endpoint}{_INTAKE_PATH_TEMPLATE.format(workspace=workspace)}"
+        self._posted_count = 0
 
         span_to_entry = SpanToIntakeEntryProcessor(
             app=app,
@@ -78,6 +80,13 @@ class IntakeExporter(SpanExporter[Span, dict]):
             project=project,
             **({"event_types": event_types} if event_types is not None else {}),
         )
+        logger.info(
+            "intake exporter ready: url=%s app=%s task=%s filter=%s batch=%d flush=%.1fs",
+            self._url, app, task,
+            sorted(span_to_entry._event_types),
+            batch_size, flush_interval,
+        )
+        self._span_to_entry = span_to_entry
         self.add_processor(span_to_entry)
         self.add_processor(IntakeEntryToDictProcessor())
         self.add_processor(
@@ -89,6 +98,25 @@ class IntakeExporter(SpanExporter[Span, dict]):
                 shutdown_timeout=shutdown_timeout,
             ))
         self.add_processor(DictBatchFilterProcessor())
+        self._events_seen = 0
+
+    @override
+    def export(self, event: IntermediateStep) -> None:
+        """Trace every event that reaches the exporter.
+
+        Span creation only happens inside :meth:`SpanExporter.export` on the END
+        event, so events that never arrive here explain a silent ``matched=0``.
+        """
+        if isinstance(event, IntermediateStep):
+            self._events_seen += 1
+            event_type = event.payload.event_type.value if event.payload and event.payload.event_type else "?"
+            logger.info(
+                "intake: event seen state=%s event_type=%s (total_events=%d)",
+                event.event_state.value if event.event_state else "?",
+                event_type,
+                self._events_seen,
+            )
+        super().export(event)
 
     @override
     async def export_processed(self, item: dict | list[dict]) -> None:
@@ -101,6 +129,11 @@ class IntakeExporter(SpanExporter[Span, dict]):
             try:
                 response = await self._client.post(self._url, json=entry)
                 response.raise_for_status()
+                self._posted_count += 1
+                logger.info(
+                    "intake POST ok: status=%d external_id=%s total=%d",
+                    response.status_code, entry.get("external_id", "?"), self._posted_count,
+                )
             except httpx.HTTPStatusError as exc:
                 # 422 = schema violation; retrying won't help, so log + drop.
                 status = exc.response.status_code if exc.response is not None else "?"
@@ -113,6 +146,7 @@ class IntakeExporter(SpanExporter[Span, dict]):
                 logger.exception("intake POST failed (url=%s)", self._url)
 
     async def _cleanup(self) -> None:
+        logger.info("intake exporter shutting down after %d POSTs to %s", self._posted_count, self._url)
         try:
             await self._client.aclose()
         finally:

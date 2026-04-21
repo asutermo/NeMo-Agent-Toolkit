@@ -26,12 +26,17 @@ from nat.plugins.intake.observability.schema.entry import EntryInput
 
 
 def _llm_span(*, input_value: object, output_value: object, name: str = "llm-call") -> Span:
-    """Build a Span carrying the attributes that NAT's SpanExporter would set on LLM_END."""
+    """Build a Span carrying the attributes that NAT's SpanExporter emits for an LLM turn.
+
+    NAT stamps ``nat.event_type`` at START and keeps the value through export,
+    merging output on END — so a completed LLM span has ``LLM_START`` on it and
+    both input/output attrs set.
+    """
     return Span(
         name=name,
         context=SpanContext(),
         attributes={
-            "nat.event_type": IntermediateStepType.LLM_END.value,
+            "nat.event_type": IntermediateStepType.LLM_START.value,
             "input.value": input_value if isinstance(input_value, str) else json.dumps(input_value),
             "output.value": output_value if isinstance(output_value, str) else json.dumps(output_value),
         },
@@ -48,7 +53,7 @@ def processor() -> SpanToIntakeEntryProcessor:
 
 
 @pytest.mark.asyncio
-async def test_llm_end_with_openai_shaped_payloads(processor: SpanToIntakeEntryProcessor) -> None:
+async def test_llm_span_with_openai_shaped_payloads(processor: SpanToIntakeEntryProcessor) -> None:
     span = _llm_span(
         input_value={"messages": [{"role": "user", "content": "hi"}]},
         output_value={"choices": [{"index": 0, "message": {"role": "assistant", "content": "hello"}}]},
@@ -66,7 +71,7 @@ async def test_llm_end_with_openai_shaped_payloads(processor: SpanToIntakeEntryP
 
 
 @pytest.mark.asyncio
-async def test_llm_end_with_unstructured_strings_wraps_into_messages(processor: SpanToIntakeEntryProcessor) -> None:
+async def test_llm_span_with_unstructured_strings_wraps_into_messages(processor: SpanToIntakeEntryProcessor) -> None:
     span = _llm_span(input_value="just a string", output_value="just a reply")
 
     entry = await processor.process(span)
@@ -79,12 +84,12 @@ async def test_llm_end_with_unstructured_strings_wraps_into_messages(processor: 
 
 
 @pytest.mark.asyncio
-async def test_workflow_end_is_dropped_by_default(processor: SpanToIntakeEntryProcessor) -> None:
+async def test_workflow_span_is_dropped_by_default(processor: SpanToIntakeEntryProcessor) -> None:
     span = Span(
         name="agent-turn",
         context=SpanContext(),
         attributes={
-            "nat.event_type": IntermediateStepType.WORKFLOW_END.value,
+            "nat.event_type": IntermediateStepType.WORKFLOW_START.value,
             "input.value": "hi",
             "output.value": "ok",
         },
@@ -94,18 +99,18 @@ async def test_workflow_end_is_dropped_by_default(processor: SpanToIntakeEntryPr
 
 
 @pytest.mark.asyncio
-async def test_workflow_end_published_when_event_types_includes_it() -> None:
+async def test_workflow_span_published_when_event_types_includes_it() -> None:
     processor = SpanToIntakeEntryProcessor(
         app="default/agent",
         task="general",
         default_model="m",
-        event_types=frozenset({IntermediateStepType.WORKFLOW_END.value}),
+        event_types=frozenset({IntermediateStepType.WORKFLOW_START.value}),
     )
     span = Span(
         name="agent-turn",
         context=SpanContext(),
         attributes={
-            "nat.event_type": IntermediateStepType.WORKFLOW_END.value,
+            "nat.event_type": IntermediateStepType.WORKFLOW_START.value,
             "input.value": "hi",
             "output.value": "ok",
         },
@@ -131,7 +136,7 @@ async def test_value_obj_attribute_takes_precedence_over_value() -> None:
         name="llm",
         context=SpanContext(),
         attributes={
-            "nat.event_type": IntermediateStepType.LLM_END.value,
+            "nat.event_type": IntermediateStepType.LLM_START.value,
             "input.value": "stale",
             "input.value_obj": json.dumps({"messages": [{"role": "user", "content": "fresh"}]}),
             "output.value_obj": json.dumps(

@@ -87,7 +87,7 @@ Entries land at `POST {endpoint}/apis/intake/v2/workspaces/{workspace}/entries`.
 | `task` | Task name within the app. Auto-created on first entry. | Yes | — |
 | `project` | Project name for org-scoped filtering in Intake exports. | No | `None` |
 | `default_model` | Fallback model name when the span doesn't carry one. | No | `unknown-model` |
-| `event_types` | Span `nat.event_type` values to publish. Add `WORKFLOW_END` for agents that don't emit `LLM_END`. | No | `["LLM_END"]` |
+| `event_types` | Span `nat.event_type` values to publish. NAT stamps `nat.event_type` at START and retains it through export (the span has both input and output by then), so the default matches `LLM_START`. Widen to include `WORKFLOW_START` for agents that don't produce an LLM span. | No | `["LLM_START"]` |
 | `api_key` | Bearer token for the Intake API. Unset for platform-injected auth. | No | `None` |
 | `timeout` | HTTP request timeout in seconds. | No | `10.0` |
 | `batch_size` | Entries per HTTP flush. | No | `100` |
@@ -102,7 +102,7 @@ Entries land at `POST {endpoint}/apis/intake/v2/workspaces/{workspace}/entries`.
 nat run --config_file config-intake.yml --input "Your workflow input here"
 ```
 
-As the workflow runs, one Intake entry is POSTed per `LLM_END` span. Tool and workflow lifecycle spans are dropped so the dataset stays formatted for training and evaluation.
+As the workflow runs, one Intake entry is POSTed per LLM span (each exported span carries `nat.event_type=LLM_START` plus the merged output). Tool and workflow lifecycle spans are dropped so the dataset stays formatted for training and evaluation.
 
 ## How It Works
 
@@ -134,12 +134,12 @@ The emitted body matches the Intake v2 producer schema:
 
 ## Working With Non-LLM Agent Types
 
-Some agent workflows (for example earlier `react_agent` builds) emit only `WORKFLOW_*` events rather than `LLM_START`/`LLM_END`. To capture those, widen the filter:
+Some agent workflows don't route through an LLM span (for example some custom tool-only agents). Widen the filter to capture those workflow turns too:
 
 ```yaml
 intake:
   _type: intake
-  event_types: ["LLM_END", "WORKFLOW_END"]
+  event_types: ["LLM_START", "WORKFLOW_START"]
   # ...
 ```
 
