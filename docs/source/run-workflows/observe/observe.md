@@ -42,6 +42,7 @@ If you have already installed the NeMo Agent Toolkit from source, you can instal
 ```bash
 # Install specific telemetry extras
 uv pip install -e ".[data-flywheel]"
+uv pip install -e ".[intake]"
 uv pip install -e ".[opentelemetry]"
 uv pip install -e ".[phoenix]"
 uv pip install -e ".[weave]"
@@ -57,6 +58,7 @@ uv pip install -e ".[ragaai]"
 ```bash
 # Install specific telemetry extras
 uv pip install "nvidia-nat[data-flywheel]"
+uv pip install "nvidia-nat[intake]"
 uv pip install "nvidia-nat[opentelemetry]"
 uv pip install "nvidia-nat[phoenix]"
 uv pip install "nvidia-nat[weave]"
@@ -80,6 +82,7 @@ The following table lists each exporter with its supported features and configur
 | [DBNL](https://distributional.com/) | [Observing with DBNL](?provider=DBNL#provider-integration-guides){.external} | Logging, Tracing |
 | [Dynatrace](https://dynatrace.com/) | [Observing with Dynatrace](?provider=Dynatrace#provider-integration-guides){.external} | Logging, Tracing |
 | [Galileo](https://galileo.ai/) | [Observing with Galileo](?provider=Galileo#provider-integration-guides){.external} | Logging, Tracing |
+| [NeMo Intake](https://github.com/NVIDIA/NeMo-Intake) | [Observing with NeMo Intake](?provider=Intake#provider-integration-guides){.external} | Logging, Tracing |
 | [Langfuse](https://langfuse.com/) | Refer to the `examples/observability/simple_calculator_observability` example for usage details | Logging, Tracing |
 | [LangSmith](https://www.langchain.com/langsmith) | [Observing with LangSmith](?provider=LangSmith#provider-integration-guides){.external} | Logging, Tracing, Evaluation Metrics |
 | [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/) | [Observing with OTel Collector](?provider=OTel-collector#provider-integration-guides){.external} | Logging, Tracing |
@@ -229,6 +232,13 @@ For complete information about developing and integrating custom telemetry expor
   :sync: Galileo
 
     :::{include} ./observe-workflow-with-galileo.md
+
+  :::
+
+  :::{tab-item} Intake
+  :sync: Intake
+
+    :::{include} ./observe-workflow-with-intake.md
 
   :::
 
