@@ -110,9 +110,14 @@ class IntakeExporter(SpanExporter[Span, dict]):
         if isinstance(event, IntermediateStep):
             self._events_seen += 1
             event_type = event.payload.event_type.value if event.payload and event.payload.event_type else "?"
-            logger.info(
+            state = event.event_state.value if event.event_state else "?"
+            # CHUNK / LLM_NEW_TOKEN fire once per streamed token — thousands
+            # per agent run. Log those at DEBUG so `-v debug` can still dump
+            # them, but keep START/END at INFO for span-boundary signal.
+            log = logger.debug if state == "CHUNK" else logger.info
+            log(
                 "intake: event seen state=%s event_type=%s (total_events=%d)",
-                event.event_state.value if event.event_state else "?",
+                state,
                 event_type,
                 self._events_seen,
             )
